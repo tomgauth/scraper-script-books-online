@@ -15,8 +15,12 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import csv
+import os.path
+
 
 url = "http://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
+base = 'http://books.toscrape.com'
 
 response = requests.get(url)
 soup = BeautifulSoup(response.content, 'html.parser')
@@ -62,15 +66,50 @@ def num_stars():
 
 review_rating = num_stars()
 
-image_url = soup.find('img')['src']
+image_path = soup.find('img')['src']
+image_path_short = re.findall("(?<=../..)[^\]]+",image_path)[0]
+image_url = base + image_path_short
 
 
 # create a csv file with the information as column name
 
+# TODO REFACTO THIS - THIS FUNCTION IS WEIRD
+
+def create_csv():
+  # check if file is already created
+  if not os.path.isfile('csv_file.csv'):
+    f = open('csv_file.csv', 'w')
+    # create the csv writer
+    writer = csv.writer(f)
+    # write a row to the csv file
+    writer.writerow(['product_page_url',
+      'universal_product_code',
+      'title',
+      'price_including_tax',
+      'price_excluding_tax',
+      'number_available',
+      'product_description',
+      'category',
+      'review_rating',
+      'image_url'])
+    # close the file
+    f.close()
+  return 'csv_file.csv'
+
+csv_file = create_csv()
 # append the data to the right columns
 
+def add_row(row):
+  file = create_csv()
+  f = open(csv_file, 'a')
+  writer = csv.writer(f)
+  writer.writerow(row)
+  f.close()
+  print('Inserted: ')
+  for cell in row:
+    print(cell)
 
-print(
+add_row([
   product_page_url,
   universal_product_code,
   title,
@@ -81,4 +120,6 @@ print(
   category,
   review_rating,
   image_url
-)
+  ])
+
+
