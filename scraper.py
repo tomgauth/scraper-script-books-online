@@ -16,59 +16,61 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import csv
-import os.path
+from urllib.parse import urljoin
 
+# scrape a book page
 
-url = "http://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
 base = 'http://books.toscrape.com'
+url = "http://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
 
-response = requests.get(url)
-soup = BeautifulSoup(response.content, 'html.parser')
+def scrape_book_page(url):
 
-table = soup.find_all('table', class_='table table-striped')[0]
+  response = requests.get(url)
+  soup = BeautifulSoup(response.content, 'html.parser')
 
-product_page_url = url
+  table = soup.find_all('table', class_='table table-striped')[0]
 
-universal_product_code = table.find_all('td')[0].get_text()
+  product_page_url = url
 
-div_title = soup.find(class_='col-sm-6 product_main')
-title = div_title.find("h1").get_text()
+  universal_product_code = table.find_all('td')[0].get_text()
 
-price_including_tax = table.find_all('td')[3].get_text()
+  div_title = soup.find(class_='col-sm-6 product_main')
+  title = div_title.find("h1").get_text()
 
-price_excluding_tax = table.find_all('td')[2].get_text()
+  price_including_tax = table.find_all('td')[3].get_text()
 
-raw_number_available = table.find_all('td')[5].get_text()
-number_available = ''.join(filter(str.isdigit, raw_number_available))
+  price_excluding_tax = table.find_all('td')[2].get_text()
 
-div_header_prod_desc = soup.find_all('div',
-  id='product_description', class_='sub-header')
-product_description = div_header_prod_desc[0].next_sibling.next_sibling.get_text()
+  raw_number_available = table.find_all('td')[5].get_text()
+  number_available = ''.join(filter(str.isdigit, raw_number_available))
 
-breadcrumb = soup.find("ul", {"class": "breadcrumb"})
-category = breadcrumb.find_all('a')[2].get_text()
+  div_header_prod_desc = soup.find_all('div',
+    id='product_description', class_='sub-header')
+  product_description = div_header_prod_desc[0].next_sibling.next_sibling.get_text()
 
-def num_stars():
-  if soup.find('p', 'star-rating One'):
-    return '1'
-  elif soup.find('p', 'star-rating Two'):
-    return '2'
-  elif soup.find('p', 'star-rating Three'):
-    return '3'
-  elif soup.find('p', 'star-rating Four'):
-    return '4'
-  elif soup.find('p', 'star-rating Five'):
-    return '5'
-  else:
-    return 'no ratings found'
+  breadcrumb = soup.find("ul", {"class": "breadcrumb"})
+  category = breadcrumb.find_all('a')[2].get_text()
 
+  def num_stars():
+    if soup.find('p', 'star-rating One'):
+      return '1'
+    elif soup.find('p', 'star-rating Two'):
+      return '2'
+    elif soup.find('p', 'star-rating Three'):
+      return '3'
+    elif soup.find('p', 'star-rating Four'):
+      return '4'
+    elif soup.find('p', 'star-rating Five'):
+      return '5'
+    else:
+      return 'no ratings found'
 
+  review_rating = num_stars()
 
-review_rating = num_stars()
+  image_path = soup.find('img')['src']
+  image_path_short = re.findall("(?<=../..)[^\]]+",image_path)[0]
+  image_url = base + image_path_short
 
-image_path = soup.find('img')['src']
-image_path_short = re.findall("(?<=../..)[^\]]+",image_path)[0]
-image_url = base + image_path_short
 
 
 # create a csv file with the information as column name
@@ -122,4 +124,62 @@ add_row([
   image_url
   ])
 
+
+# scrape a category
+
+# get all the elements 'article' class:'product_pod'
+
+# TODO REFACTO - USE CLASSES?
+
+
+# gets the category url in input
+# returns a list of url of product pages
+
+category_url = 'https://books.toscrape.com/catalogue/category/books/historical-fiction_4/'
+
+def scrape_category(category_url):
+
+  response = requests.get(category_url)
+
+  base_catalogue = base +'/catalogue'
+
+  soup = BeautifulSoup(response.content, 'html.parser')
+  raw_html_books = soup.find_all('article', class_='product_pod')
+
+
+  # append the product page url to a list
+
+  product_page_urls = []
+  for b in raw_html_books:
+    prod_page_path = b.find('a')['href']
+    prod_page_url_end = re.findall("(?<=../../..)[^\]]+",prod_page_path)[0]
+    prod_page_url = base_catalogue + prod_page_url_end
+    product_page_urls.append(prod_page_url)
+
+  # repeat for each page
+  # if the page is full, check if there are more books
+  book_page_urls = []
+  if len(raw_html_books) == 20:
+    n = 1
+    while response.status_code == 200:
+      book_page_url = category_url+'page-{}.html'.format(n)
+      print(book_page_url)
+      response = requests.get(book_page_url)
+      print(response)
+      n += 1
+      book_page_urls.append(book_page_url)
+
+  # last url appended will be leading to a 404 page
+  book_page_urls.pop()
+
+  return book_page_urls
+
+# loop through each category
+
+
+# if num of pages !==1, go to page // if response == 200, scrape page, else end
+
+# get all the pages of the category
+# get all the product pages urls of the category
+# for each url, scrape the product page
 
