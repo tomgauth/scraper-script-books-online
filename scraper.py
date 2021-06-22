@@ -1,27 +1,15 @@
-# input the url of any page of the website
-
-# for an item "book", get the information:
-# product_page_url
-# universal_ product_code (upc)
-# title
-# price_including_tax
-# price_excluding_tax
-# number_available
-# product_description
-# category
-# review_rating
-# image_url
-
 import requests
 from bs4 import BeautifulSoup
 import re
 import csv
+import os
 from urllib.parse import urljoin
 
 # scrape a book page
 
 base = 'http://books.toscrape.com'
-url = "http://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
+base_catalogue = base +'/catalogue'
+# url = "http://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html"
 
 def scrape_book_page(url):
 
@@ -111,18 +99,18 @@ def add_row(row):
   for cell in row:
     print(cell)
 
-add_row([
-  product_page_url,
-  universal_product_code,
-  title,
-  price_including_tax,
-  price_excluding_tax,
-  number_available,
-  product_description,
-  category,
-  review_rating,
-  image_url
-  ])
+# add_row([
+#   product_page_url,
+#   universal_product_code,
+#   title,
+#   price_including_tax,
+#   price_excluding_tax,
+#   number_available,
+#   product_description,
+#   category,
+#   review_rating,
+#   image_url
+#   ])
 
 
 # scrape a category
@@ -137,49 +125,71 @@ add_row([
 
 category_url = 'https://books.toscrape.com/catalogue/category/books/historical-fiction_4/'
 
-def scrape_category(category_url):
-
+def get_category_pages(category_url):
+  # repeat for each page
+  # if the page is full, check if there are more books
   response = requests.get(category_url)
-
-  base_catalogue = base +'/catalogue'
-
   soup = BeautifulSoup(response.content, 'html.parser')
   raw_html_books = soup.find_all('article', class_='product_pod')
+  page_urls = []
+  if len(raw_html_books) != 20:
+    page_urls.append(category_url)
+  else:
+    n = 1
+    while response.status_code == 200:
+      page_url = category_url+'page-{}.html'.format(n)
+      response = requests.get(page_url)
+      n += 1
+      page_urls.append(page_url)
+  # last url appended will be leading to a 404 page
+    page_urls.pop()
+  return page_urls
 
 
+
+
+def scrape_category_page(page_url):
+  response = requests.get(category_url)
+  soup = BeautifulSoup(response.content, 'html.parser')
+  raw_html_books = soup.find_all('article', class_='product_pod')
   # append the product page url to a list
-
   product_page_urls = []
   for b in raw_html_books:
     prod_page_path = b.find('a')['href']
     prod_page_url_end = re.findall("(?<=../../..)[^\]]+",prod_page_path)[0]
     prod_page_url = base_catalogue + prod_page_url_end
     product_page_urls.append(prod_page_url)
-
-  # repeat for each page
-  # if the page is full, check if there are more books
-  book_page_urls = []
-  if len(raw_html_books) == 20:
-    n = 1
-    while response.status_code == 200:
-      book_page_url = category_url+'page-{}.html'.format(n)
-      print(book_page_url)
-      response = requests.get(book_page_url)
-      print(response)
-      n += 1
-      book_page_urls.append(book_page_url)
-
-  # last url appended will be leading to a 404 page
-  book_page_urls.pop()
-
-  return book_page_urls
+  return product_page_urls
 
 # loop through each category
 
+# get the html of the base url
 
-# if num of pages !==1, go to page // if response == 200, scrape page, else end
+def scrape_categories(base):
+  response = requests.get(base)
+  soup = BeautifulSoup(response.content, 'html.parser')
+  div_categories = soup.find('div', class_='side_categories')
+  category_paths = div_categories.find_all('a')
+  categories = []
+  for category_path in category_paths:
+    print(category_path['href'])
+    print(base)
+    print(base_catalogue)
+    category_url = base + '/' + category_path['href']
+    categories.append(category_url)
+  return categories
 
-# get all the pages of the category
-# get all the product pages urls of the category
-# for each url, scrape the product page
+
+def scrape_all():
+  categories = scrape_categories(base)
+  for cat in categories:
+    book_page_urls = get_category_pages(cat)
+    for book_page in book_page_urls:
+      product_page_urls = scrape_category_page(book_page)
+      for product_page in product_page_urls:
+        print(product_page)
+        scrape_book_page(product_page)
+
+
+
 
