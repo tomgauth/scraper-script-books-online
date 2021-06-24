@@ -1,4 +1,4 @@
 # ignore all csv files
 *.csv
 # ignore folfer extracted data
-./extracted data
+/extracted data
