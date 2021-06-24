@@ -7,13 +7,10 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 
-# def main():
 
-
-
-def create_csv(category_name):
+def create_csv(csv_name):
   # check if file is already created
-  path = f'./extracted data/csv files/{category_name}.csv'
+  path = f'./extracted data/csv files/{csv_name}.csv'
   p = Path(path)
   if not p.is_file():
     f = open(path, 'w')
@@ -54,6 +51,16 @@ def add_row(file_path, row):
   print('row added')
 
 
+def download_book_img(numbered_category_name, book_title, image_url):
+  # create a folder named after the category
+  path = f"extracted data/book images/{numbered_category_name}"
+  Path(path).mkdir(parents=True, exist_ok=True)
+  r = requests.get(image_url, allow_redirects=True)
+
+  open(f'{path}/{book_title}.jpg', 'wb').write(r.content)
+
+
+
 def scrape_book_url(url):
 
   response = requests.get(url)
@@ -85,15 +92,19 @@ def scrape_book_url(url):
     product_description = ''
 
   breadcrumb = soup.find("ul", {"class": "breadcrumb"})
-  category = breadcrumb.find_all('a')[2].get_text().lower()
-
+  category_html = breadcrumb.find_all('a')[2]
+  category_name = category_html.get_text().lower()
+  category_href = category_html['href']
+  category_num = get_cat_num(category_href)
+  numbered_category_name = category_num + ' - ' + category_name
+  print(numbered_category_name)
   review_rating = num_stars(soup)
 
   image_path = soup.find('img')['src']
   image_path_short = re.findall("(?<=../..)[^\]]+",image_path)[0]
   image_url = base + image_path_short
 
-  file_path = create_csv(category)
+  file_path = create_csv(numbered_category_name)
   row = [
     product_page_url,
     universal_product_code,
@@ -102,15 +113,16 @@ def scrape_book_url(url):
     price_excluding_tax,
     number_available,
     product_description,
-    category,
+    category_name, # category
     review_rating,
     image_url
   ]
-  return [file_path, row]
+
+  return [file_path, row, numbered_category_name]
 
 
 
-def get_category_pages(category_url):
+def list_category_pages(category_url):
   response = requests.get(category_url)
   soup = BeautifulSoup(response.content, 'html.parser')
   raw_html_books = soup.find_all('article', class_='product_pod')
@@ -162,10 +174,16 @@ def get_cat_name(category_url):
   cat_name = cat_name_search.group(1)
   return cat_name
 
+def get_cat_num(category_url):
+  pattern = r"category\/books\/.+_(\d+)\/index.html"
+  cat_num_search = re.search(pattern, category_url, re.IGNORECASE)
+  cat_num = cat_num_search.group(1)
+  return cat_num
+
 base = 'http://books.toscrape.com'
 base_catalogue = base +'/catalogue'
 
-def scrape_all():
+def main():
   # create a folder 'extracted data'
   # create a sub-folder 'csv files'
   Path("./extracted data/csv files").mkdir(parents=True, exist_ok=True)
@@ -176,8 +194,9 @@ def scrape_all():
   # for each category in categories:
   for category_url in categories_url:
   # create a csv file in the folder 'csv files' name category.csv
-    category_name = get_cat_name(category_url) #get the category name from url
-    pages = get_category_pages(category_url)
+    category_name = get_cat_name(category_url)
+    category_num = get_cat_num(category_url) #get the category name from url
+    pages = list_category_pages(category_url)
     print('category: ', category_name)
     for page in pages:
       books_on_page = list_books_urls(page)
@@ -185,14 +204,14 @@ def scrape_all():
         print('current book: ', book_url)
         data = scrape_book_url(book_url)
         add_row(data[0],data[1])
+        download_book_img(data[2], data[1][2], data[1][9])
 
 
-scrape_all()
 
 
-# if __name__ == "__main__":
-#   print(__name__)
-#   main()
+if __name__ == "__main__":
+  print(__name__)
+  main()
 
 
 
@@ -202,7 +221,7 @@ scrape_all()
 # category_url = categories_url[8]
 # category_name = get_cat_name(category_url)
 # create_csv(category_name)
-# pages = get_category_pages(category_url)
+# pages = list_category_pages(category_url)
 # page = pages[2]
 # books_on_page = list_books_urls(page)
 # book_url = books_on_page[15]
