@@ -3,9 +3,17 @@ from bs4 import BeautifulSoup
 import re
 import csv
 import os
+import time
 from pathlib import Path
-from urllib.parse import urljoin
+from slugify import slugify
+from progress.bar import IncrementalBar
 
+def loading_bar(max):
+  bar = IncrementalBar('Processing',max=max)
+  for i in range(max):
+    # Do some work
+    bar.next()
+  bar.finish()
 
 
 def create_csv(csv_name):
@@ -48,17 +56,16 @@ def add_row(file_path, row):
     writer = csv.writer(f)
     writer.writerow(row)
   f.close()
-  print('row added')
 
 
 def download_book_img(numbered_category_name, book_title, image_url):
   # create a folder named after the category
+  title = slugify(book_title)
   path = f"extracted data/book images/{numbered_category_name}"
   Path(path).mkdir(parents=True, exist_ok=True)
   r = requests.get(image_url, allow_redirects=True)
 
-  open(f'{path}/{book_title}.jpg', 'wb').write(r.content)
-
+  open(f'{path}/{title}.jpg', 'wb').write(r.content)
 
 
 def scrape_book_url(url):
@@ -93,11 +100,10 @@ def scrape_book_url(url):
 
   breadcrumb = soup.find("ul", {"class": "breadcrumb"})
   category_html = breadcrumb.find_all('a')[2]
-  category_name = category_html.get_text().lower()
+  category_name = category_html.get_text()
   category_href = category_html['href']
   category_num = get_cat_num(category_href)
   numbered_category_name = category_num + ' - ' + category_name
-  print(numbered_category_name)
   review_rating = num_stars(soup)
 
   image_path = soup.find('img')['src']
@@ -180,10 +186,40 @@ def get_cat_num(category_url):
   cat_num = cat_num_search.group(1)
   return cat_num
 
+def get_cat_size(category_url):
+  response = requests.get(category_url)
+  soup = BeautifulSoup(response.content, 'html.parser')
+  num_books_txt = soup.form.div.next_sibling.next_sibling.get_text()
+  num_books_in_cat = int(num_books_txt)
+  return num_books_in_cat
+
+
+
 base = 'http://books.toscrape.com'
 base_catalogue = base +'/catalogue'
+ascii_art = './ascii-art.txt'
+
+def count_books(base):
+  #todo refacto these 2 lines into a "make_soup" function
+  response = requests.get(base)
+  soup = BeautifulSoup(response.content, 'html.parser')
+  num_books_txt = soup.form.div.next_sibling.next_sibling.get_text()
+  num_books_total = int(num_books_txt)
+  return num_books_total
+
+def print_logo(ascii_art):
+  with open(ascii_art, 'r') as f:
+    for line in f:
+      print(line)
+      time.sleep(0.05)
+
+
 
 def main():
+  try:
+    print_logo(ascii_art)
+  except:
+    print("error printing logo")
   # create a folder 'extracted data'
   # create a sub-folder 'csv files'
   Path("./extracted data/csv files").mkdir(parents=True, exist_ok=True)
@@ -191,39 +227,33 @@ def main():
   Path("./extracted data/book images").mkdir(parents=True, exist_ok=True)
   # get the list of categories from the base
   categories_url = scrape_categories(base)
+  count = count_books(base)
   # for each category in categories:
+  books_scraped = 0
   for category_url in categories_url:
   # create a csv file in the folder 'csv files' name category.csv
     category_name = get_cat_name(category_url)
     category_num = get_cat_num(category_url) #get the category name from url
+    # print(f'Category:{category_num}/{len(categories_url)} - {category_name}')
     pages = list_category_pages(category_url)
-    print('category: ', category_name)
-    for page in pages:
-      books_on_page = list_books_urls(page)
-      for book_url in books_on_page:
-        print('current book: ', book_url)
-        data = scrape_book_url(book_url)
-        add_row(data[0],data[1])
-        download_book_img(data[2], data[1][2], data[1][9])
-
+    num_books_in_cat = get_cat_size(category_url)
+    books_scraped_in_cat =0
+    print(f'Scraping category {category_name}...')
+    with IncrementalBar('Progress: ', max=num_books_in_cat) as bar:
+      for page_num, page in enumerate(pages):
+        books_on_page = list_books_urls(page)
+        for book_url in books_on_page:
+          # print(f'{index}{len(books_on_page)} / books to scrape')
+          data = scrape_book_url(book_url)
+          #TODO refacto this
+          add_row(data[0],data[1])
+          download_book_img(data[2], data[1][2], data[1][9])
+          books_scraped+=1
+          bar.next()
+      print(f'\n{books_scraped} / {count} books scraped so far !')
+      bar.finish()
 
 
 
 if __name__ == "__main__":
-  print(__name__)
   main()
-
-
-
-# Path("./extracted data/csv files").mkdir(parents=True, exist_ok=True)
-# Path("./extracted data/book images").mkdir(parents=True, exist_ok=True)
-# categories_url = scrape_categories(base)
-# category_url = categories_url[8]
-# category_name = get_cat_name(category_url)
-# create_csv(category_name)
-# pages = list_category_pages(category_url)
-# page = pages[2]
-# books_on_page = list_books_urls(page)
-# book_url = books_on_page[15]
-# data = scrape_book_url(book_url)
-# add_row(data[0],data[1])
