@@ -102,8 +102,8 @@ def scrape_book_url(url):
   category_html = breadcrumb.find_all('a')[2]
   category_name = category_html.get_text()
   category_href = category_html['href']
-  category_num = get_cat_num(category_href)
-  numbered_category_name = category_num + ' - ' + category_name
+  category_num = int(get_cat_num(category_href))
+  numbered_category_name = f'{category_num:02d}-{category_name}'
   review_rating = num_stars(soup)
 
   image_path = soup.find('img')['src']
@@ -212,6 +212,8 @@ def print_logo(ascii_art):
     for line in f:
       print(line)
       time.sleep(0.05)
+  print('ℹ️   Press ctrl+c to stop')
+  print('ℹ️   Find all the scraped data in folder \"extracted data\"\n\n')
 
 
 
@@ -238,7 +240,7 @@ def main():
     pages = list_category_pages(category_url)
     num_books_in_cat = get_cat_size(category_url)
     books_scraped_in_cat =0
-    print(f'Scraping category {category_name}...')
+    print(f'🤖 Scraping category {category_name}...')
     with IncrementalBar('Progress: ', max=num_books_in_cat) as bar:
       for page_num, page in enumerate(pages):
         books_on_page = list_books_urls(page)
@@ -250,7 +252,7 @@ def main():
           download_book_img(data[2], data[1][2], data[1][9])
           books_scraped+=1
           bar.next()
-      print(f'\n{books_scraped} / {count} books scraped so far !')
+      print(f'\n📚 {books_scraped} / {count} books scraped so far !')
       bar.finish()
 
 
