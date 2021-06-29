@@ -44,9 +44,7 @@ def scrape_categories(base):
 
 
 def count_books(base):
-    # todo refacto these 2 lines into a "make_soup" function
-    response = requests.get(base)
-    soup = BeautifulSoup(response.content, 'html.parser')
+    soup = get_soup(base)
     num_books_txt = soup.form.div.next_sibling.next_sibling.get_text()
     num_books_total = int(num_books_txt)
     return num_books_total
@@ -70,14 +68,14 @@ def get_cat_num(category_url):
 
 def get_cat_size(category_url):
     # returns the number of books in a category based on the html div
-    response = requests.get(category_url)
-    soup = BeautifulSoup(response.content, 'html.parser')
+    soup = get_soup(category_url)
     num_books_txt = soup.form.div.next_sibling.next_sibling.get_text()
     num_books_in_cat = int(num_books_txt)
     return num_books_in_cat
 
 
 def list_category_pages(category_url):
+    response = requests.get(category_url)
     soup = get_soup(category_url)
     raw_html_books = soup.find_all('article', class_='product_pod')
     page_urls = []
@@ -152,10 +150,15 @@ def scrape_book_url(url):
         number_available = ''
 
     try:
-        div_title = soup.find(class_='col-sm-6 product_main')
-        title = div_title.find("h1").get_text()
+        product_main = soup.find(class_='product_main')
+        title = product_main.find("h1").get_text()
     except:
         title = ''
+
+    try:
+        review_rating = num_stars(product_main)
+    except:
+        review_rating = ''
 
     product_page_url = url
 
@@ -174,7 +177,6 @@ def scrape_book_url(url):
     category_href = category_html['href']
     category_num = int(get_cat_num(category_href))
     numbered_category_name = f'{category_num:02d}-{category_name}'
-    review_rating = num_stars(soup)
 
     try:
         image_path = soup.find('img')['src']
@@ -199,21 +201,24 @@ def scrape_book_url(url):
 
     return [file_path, row, numbered_category_name]
 
+# TODO change for a dict
 
-def num_stars(soup):
-    # finds the number of stars of a book based on the class of p tag
-    if soup.find('p', 'star-rating One'):
-        return '1'
-    elif soup.find('p', 'star-rating Two'):
-        return '2'
-    elif soup.find('p', 'star-rating Three'):
-        return '3'
-    elif soup.find('p', 'star-rating Four'):
-        return '4'
-    elif soup.find('p', 'star-rating Five'):
-        return '5'
-    else:
-        return 'no ratings found'
+
+def num_stars(product_main):
+    # finds the number of stars of a book using the product_main div
+    ratings = {
+        'One':  1,
+        'Two':  2,
+        'Three':  3,
+        'Four': 4,
+        'Five': 5
+    }
+    rating_html = product_main.find('p', 'star-rating')
+    rating_txt = rating_html['class'][1]
+
+    for rating in ratings:
+        if rating_txt == rating:
+            return ratings.get(rating_txt)
 
 
 def download_book_img(numbered_category_name, book_title, image_url):
@@ -279,7 +284,7 @@ def main():
         books_scraped_in_cat = 0
         print(f'🤖 Scraping category {category_name}...')
         with IncrementalBar('Progress: ', max=num_books_in_cat) as bar:
-            # IncrementalBar displays the loading bar progressing
+               # IncrementalBar displays the loading bar progressing
             for page in pages:
                 books_on_page = list_books_urls(page)
                 for book_url in books_on_page:
