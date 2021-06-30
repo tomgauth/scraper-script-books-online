@@ -13,8 +13,18 @@ base_catalogue = base + '/catalogue'
 ascii_art = './ascii-art.txt'
 
 
+def get_soup(url):
+    # takes a page url and returns the page html
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        return soup
+    except HTTPError as hp:
+        print(hp)
+
+
 def print_logo(ascii_art):
-    with open(ascii_art, 'r') as f:
+    with open(ascii_art, 'r', encoding='UTF-8') as f:
         # this will print each character found in ascii file very fast.
         # Makes it prettier
         for line in f:
@@ -33,11 +43,7 @@ def scrape_categories(base):
     soup = BeautifulSoup(response.content, 'html.parser')
     div_categories = soup.find('div', class_='side_categories')
     category_paths = div_categories.find_all('a')
-    categories = []
-    for category_path in category_paths:
-        category_url = base + '/' + category_path['href']
-        categories.append(category_url)
-    # TODO change this, not flexible enough
+    categories = [base + '/' + n['href'] for n in category_paths]
     categories.remove(
         'http://books.toscrape.com/catalogue/category/books_1/index.html')
     return categories
@@ -75,11 +81,14 @@ def get_cat_size(category_url):
 
 
 def list_category_pages(category_url):
-    response = requests.get(category_url)
+    # takes the 1st page of the category
+    # returns a list of urls of all the pages of the category
+    response = requests.get(base)
     soup = get_soup(category_url)
     raw_html_books = soup.find_all('article', class_='product_pod')
     page_urls = []
     if len(raw_html_books) != 20:
+        # if the page 1 shows more than 20 books, try to get next page
         page_urls.append(category_url)
     else:
         n = 1
@@ -91,16 +100,6 @@ def list_category_pages(category_url):
             n += 1
         page_urls.pop()
     return page_urls
-
-
-def get_soup(url):
-    # takes a page url and returns the page html
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
-        return soup
-    except HTTPError as hp:
-        print(hp)
 
 
 def list_books_urls(page_url):
@@ -119,8 +118,11 @@ def list_books_urls(page_url):
 
 
 def scrape_book_url(url):
-
+    # takes the url of the book page and
+    # returns a dict containing: file_path, row values, numbered_category_name
     soup = get_soup(url)
+
+    test = soup.find_all('div', class_='imaginary')
 
     try:
         table = soup.find_all('table', class_='table table-striped')[0]
@@ -143,7 +145,7 @@ def scrape_book_url(url):
                 filter(str.isdigit, raw_number_available))
         except:
             number_available = ''
-    except:
+    except IndexError:
         price_including_tax = ''
         universal_product_code = ''
         price_excluding_tax = ''
@@ -199,7 +201,9 @@ def scrape_book_url(url):
         image_url
     ]
 
-    return [file_path, row, numbered_category_name]
+    return {'file_path': file_path,
+            'row': row,
+            'numbered_category_name': numbered_category_name}
 
 # TODO change for a dict
 
@@ -215,7 +219,7 @@ def num_stars(product_main):
     }
     rating_html = product_main.find('p', 'star-rating')
     rating_txt = rating_html['class'][1]
-
+    # return [ratings.get(rating_txt) for rating in ratings if rating_txt == rating][0]
     for rating in ratings:
         if rating_txt == rating:
             return ratings.get(rating_txt)
@@ -254,7 +258,7 @@ def create_csv(csv_name):
 
 def add_row(file_path, row):
     # appends a row to a csv file
-    with open(file_path, 'a', newline='') as f:
+    with open(file_path, 'a', newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(row)
     f.close()
@@ -263,8 +267,8 @@ def add_row(file_path, row):
 def main():
     try:
         print_logo(ascii_art)
-    except:
-        print("error printing logo")
+    except UnicodeDecodeError as error:
+        print("Error displaying logo: " + error)
     # creates a folder 'extracted data'
     Path("./extracted data/csv files").mkdir(parents=True, exist_ok=True)
     # creates a sub-folder 'book images'
@@ -276,23 +280,22 @@ def main():
     # loop through the categories
     for category_url in categories_url:
         # create a csv file in the folder 'csv files' name category.csv
+        # get category name from url
         category_name = get_cat_name(category_url)
-        # get the category name from url
-        category_num = get_cat_num(category_url)
-        pages = list_category_pages(category_url)
-        num_books_in_cat = get_cat_size(category_url)
-        books_scraped_in_cat = 0
+        pages = list_category_pages(category_url)  # list of urls of pages
+        num_books_in_cat = get_cat_size(
+            category_url)  # num of books in category
         print(f'🤖 Scraping category {category_name}...')
         with IncrementalBar('Progress: ', max=num_books_in_cat) as bar:
-               # IncrementalBar displays the loading bar progressing
+            # IncrementalBar displays the loading bar progressing
             for page in pages:
                 books_on_page = list_books_urls(page)
                 for book_url in books_on_page:
-                    # print(f'{index}{len(books_on_page)} / books to scrape')
                     data = scrape_book_url(book_url)
-                    # TODO refacto this
-                    add_row(data[0], data[1])
-                    download_book_img(data[2], data[1][2], data[1][9])
+                    add_row(data['file_path'], data['row'])
+                    download_book_img(data['numbered_category_name'],
+                                      data['row'][2],
+                                      data['row'][9])
                     books_scraped += 1
                     bar.next()  # increment the loading bar by 1
             print(f'\n📚 {books_scraped} / {total_books} books scraped so far!')
