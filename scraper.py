@@ -122,26 +122,38 @@ def scrape_book_url(url):
     # returns a dict containing: file_path, row values, numbered_category_name
     soup = get_soup(url)
 
-    test = soup.find_all('div', class_='imaginary')
+    row = {
+        'product_page_url': '',
+        'universal_product_code': '',
+        'title': '',
+        'price_including_tax': '',
+        'price_excluding_tax': '',
+        'number_available': '',
+        'product_description': '',
+        'category_name': '',
+        'review_rating': '',
+        'image_url': '',
+        'numbered_category_name': ''
+    }
 
     try:
         table = soup.find_all('table', class_='table table-striped')[0]
 
         try:
-            price_including_tax = table.find_all('td')[3].get_text()
+            row['price_including_tax'] = table.find_all('td')[3].get_text()
         except:
-            price_including_tax = ''
+            pass
         try:
-            universal_product_code = table.find_all('td')[0].get_text()
+            row['universal_product_code'] = table.find_all('td')[0].get_text()
         except:
             universal_product_code = ''
         try:
-            price_excluding_tax = table.find_all('td')[2].get_text()
+            row['price_excluding_tax'] = table.find_all('td')[2].get_text()
         except:
             price_excluding_tax = ''
         try:
             raw_number_available = table.find_all('td')[5].get_text()
-            number_available = ''.join(
+            row['number_available'] = ''.join(
                 filter(str.isdigit, raw_number_available))
         except:
             number_available = ''
@@ -153,59 +165,41 @@ def scrape_book_url(url):
 
     try:
         product_main = soup.find(class_='product_main')
-        title = product_main.find("h1").get_text()
+        row['title'] = product_main.find("h1").get_text()
     except:
         title = ''
 
     try:
-        review_rating = num_stars(product_main)
+        row['review_rating'] = num_stars(product_main)
     except:
         review_rating = ''
 
-    product_page_url = url
+    row['product_page_url'] = url
 
     try:
         div_header_prod_desc = soup.find_all('div',
                                              id='product_description',
                                              class_='sub-header')
         prod_desc_html = div_header_prod_desc[0].next_sibling.next_sibling
-        product_description = prod_desc_html.get_text()
+        row['product_description'] = prod_desc_html.get_text()
     except:
         product_description = ''
 
     breadcrumb = soup.find("ul", {"class": "breadcrumb"})
     category_html = breadcrumb.find_all('a')[2]
-    category_name = category_html.get_text()
+    row['category_name'] = category_html.get_text()
     category_href = category_html['href']
     category_num = int(get_cat_num(category_href))
-    numbered_category_name = f'{category_num:02d}-{category_name}'
+    row['numbered_category_name'] = f"{category_num:02d}-{row['category_name']}"
 
     try:
         image_path = soup.find('img')['src']
         image_path_short = re.findall("(?<=../..)[^\]]+", image_path)[0]
-        image_url = base + image_path_short
+        row['image_url'] = base + image_path_short
     except:
         image_url = ''
 
-    file_path = create_csv(numbered_category_name)
-    row = [
-        product_page_url,
-        universal_product_code,
-        title,
-        price_including_tax,
-        price_excluding_tax,
-        number_available,
-        product_description,
-        category_name,  # category
-        review_rating,
-        image_url
-    ]
-
-    return {'file_path': file_path,
-            'row': row,
-            'numbered_category_name': numbered_category_name}
-
-# TODO change for a dict
+    return row
 
 
 def num_stars(product_main):
@@ -219,10 +213,7 @@ def num_stars(product_main):
     }
     rating_html = product_main.find('p', 'star-rating')
     rating_txt = rating_html['class'][1]
-    # return [ratings.get(rating_txt) for rating in ratings if rating_txt == rating][0]
-    for rating in ratings:
-        if rating_txt == rating:
-            return ratings.get(rating_txt)
+    return ratings.get(rating_txt)
 
 
 def download_book_img(numbered_category_name, book_title, image_url):
@@ -235,32 +226,18 @@ def download_book_img(numbered_category_name, book_title, image_url):
     open(f'{path}/{title}.jpg', 'wb').write(r.content)
 
 
-def create_csv(csv_name):
+def create_csv(rows):  # create_csv(csv_name, rows)
     # creates a csv file if it doesn't already exist
+    # 'numbered_category_name': numbered_category_name
+    csv_name = rows[0]['numbered_category_name']
+    [row.pop('numbered_category_name') for row in rows]  # removes this column
     path = f'./extracted data/csv files/{csv_name}.csv'
     p = Path(path)
-    if not p.is_file():
-        f = open(path, 'w')
+    with open(path, 'a', newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(['product_page_url',
-                         'universal_product_code',
-                         'title',
-                         'price_including_tax',
-                         'price_excluding_tax',
-                         'number_available',
-                         'product_description',
-                         'category',
-                         'review_rating',
-                         'image_url'])
-        f.close()
-    return path
-
-
-def add_row(file_path, row):
-    # appends a row to a csv file
-    with open(file_path, 'a', newline='', encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(row)
+        writer.writerow(rows[0])
+        for row in rows:
+            writer.writerow(row.values())
     f.close()
 
 
@@ -279,6 +256,7 @@ def main():
     books_scraped = 0
     # loop through the categories
     for category_url in categories_url:
+        rows = []
         # create a csv file in the folder 'csv files' name category.csv
         # get category name from url
         category_name = get_cat_name(category_url)
@@ -291,15 +269,16 @@ def main():
             for page in pages:
                 books_on_page = list_books_urls(page)
                 for book_url in books_on_page:
-                    data = scrape_book_url(book_url)
-                    add_row(data['file_path'], data['row'])
-                    download_book_img(data['numbered_category_name'],
-                                      data['row'][2],
-                                      data['row'][9])
+                    row = scrape_book_url(book_url)
+                    download_book_img(row['numbered_category_name'],
+                                      row['title'],
+                                      row['image_url'])
+                    rows.append(row)
                     books_scraped += 1
                     bar.next()  # increment the loading bar by 1
-            print(f'\n📚 {books_scraped} / {total_books} books scraped so far!')
-            bar.finish()
+        create_csv(rows)
+        print(f'\n📚 {books_scraped} / {total_books} books scraped so far!')
+        bar.finish()
     print(f'🥳 Scraping finished, 📚 {books_scraped} books have been scraped!')
 
 
