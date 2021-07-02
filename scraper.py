@@ -19,8 +19,8 @@ def get_soup(url):
         response = requests.get(url)
         soup = BeautifulSoup(response.content, 'html.parser')
         return soup
-    except HTTPError as hp:
-        print(hp)
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
 
 
 def print_logo(ascii_art):
@@ -56,7 +56,7 @@ def count_books(base):
     return num_books_total
 
 
-def get_cat_name(category_url):
+def get_cat_name_from_url(category_url):
     # returns the name of the category
     pattern = r"category\/books\/(.+)_\d+\/index.html"
     cat_name_search = re.search(pattern, category_url, re.IGNORECASE)
@@ -117,6 +117,78 @@ def list_books_urls(page_url):
     return product_page_urls
 
 
+def get_table_values(soup):
+    values = {}
+    try:
+        table = soup.find_all('table', class_='table table-striped')[0]
+        try:
+            values['price_including_tax'] = table.find_all('td')[3].get_text()
+        except IndexError:
+            print('\n price_including_tax not found')
+        try:
+            values['universal_product_code'] = table.find_all('td')[
+                0].get_text()
+        except IndexError:
+            print('\n universal_product_code not found')
+        try:
+            values['price_excluding_tax'] = table.find_all('td')[2].get_text()
+        except IndexError:
+            print('\n price_excluding_tax not found')
+        try:
+            raw_number_available = table.find_all('td')[5].get_text()
+            values['number_available'] = ''.join(
+                filter(str.isdigit, raw_number_available))
+        except IndexError:
+            print('\n number_available not found')
+    except IndexError:
+        print('\n table not found')
+    return values
+
+
+def get_title(soup):
+    try:
+        product_main = soup.find(class_='product_main')
+        title = product_main.find("h1").get_text()
+        return title
+    except IndexError:
+        print('\n Title not found')
+
+
+def get_prod_description(soup):
+    try:
+        div_header_prod_desc = soup.find('div',
+                                         id='product_description',
+                                         class_='sub-header')
+        prod_desc_html = div_header_prod_desc.next_sibling.next_sibling
+        product_description = prod_desc_html.get_text()
+        return product_description
+    except AttributeError:
+        print('product_description not found')
+
+
+def get_cat_name_soup(soup):
+    try:
+        breadcrumb = soup.find("ul", {"class": "breadcrumb"})
+        category_html = breadcrumb.find_all('a')[2]
+        category_name = category_html.get_text()
+        category_href = category_html['href']
+        category_num = int(get_cat_num(category_href))
+        numbered_category_name = f"{category_num:02d}-{category_name}"
+        return [category_name, numbered_category_name]
+    except IndexError:
+        print('\n category_name not found')
+
+
+def get_img_url(soup):
+    try:
+        image_path = soup.find('img')['src']
+        image_path_short = re.findall("(?<=../..)[^\]]+", image_path)[0]
+        image_url = base + image_path_short
+        return image_url
+    except:
+        print('\n image_url not found')
+
+
 def scrape_book_url(url):
     # takes the url of the book page and
     # returns a dict containing: file_path, row values, numbered_category_name
@@ -136,73 +208,22 @@ def scrape_book_url(url):
         'numbered_category_name': ''
     }
 
-    try:
-        table = soup.find_all('table', class_='table table-striped')[0]
-
-        try:
-            row['price_including_tax'] = table.find_all('td')[3].get_text()
-        except:
-            pass
-        try:
-            row['universal_product_code'] = table.find_all('td')[0].get_text()
-        except:
-            universal_product_code = ''
-        try:
-            row['price_excluding_tax'] = table.find_all('td')[2].get_text()
-        except:
-            price_excluding_tax = ''
-        try:
-            raw_number_available = table.find_all('td')[5].get_text()
-            row['number_available'] = ''.join(
-                filter(str.isdigit, raw_number_available))
-        except:
-            number_available = ''
-    except IndexError:
-        price_including_tax = ''
-        universal_product_code = ''
-        price_excluding_tax = ''
-        number_available = ''
-
-    try:
-        product_main = soup.find(class_='product_main')
-        row['title'] = product_main.find("h1").get_text()
-    except:
-        title = ''
-
-    try:
-        row['review_rating'] = num_stars(product_main)
-    except:
-        review_rating = ''
-
+    table_values = get_table_values(soup)
+    # gets the values: price_including_tax, universal_product_code,
+    # price_excluding_tax and number_available
+    row.update(table_values)
     row['product_page_url'] = url
-
-    try:
-        div_header_prod_desc = soup.find_all('div',
-                                             id='product_description',
-                                             class_='sub-header')
-        prod_desc_html = div_header_prod_desc[0].next_sibling.next_sibling
-        row['product_description'] = prod_desc_html.get_text()
-    except:
-        product_description = ''
-
-    breadcrumb = soup.find("ul", {"class": "breadcrumb"})
-    category_html = breadcrumb.find_all('a')[2]
-    row['category_name'] = category_html.get_text()
-    category_href = category_html['href']
-    category_num = int(get_cat_num(category_href))
-    row['numbered_category_name'] = f"{category_num:02d}-{row['category_name']}"
-
-    try:
-        image_path = soup.find('img')['src']
-        image_path_short = re.findall("(?<=../..)[^\]]+", image_path)[0]
-        row['image_url'] = base + image_path_short
-    except:
-        image_url = ''
+    row['title'] = get_title(soup)
+    row['product_description'] = get_prod_description(soup)
+    row['category_name'] = get_cat_name_soup(soup)[0]
+    row['review_rating'] = num_stars(soup)
+    row['image_url'] = get_img_url(soup)
+    row['numbered_category_name'] = get_cat_name_soup(soup)[1]
 
     return row
 
 
-def num_stars(product_main):
+def num_stars(soup):
     # finds the number of stars of a book using the product_main div
     ratings = {
         'One':  1,
@@ -211,9 +232,13 @@ def num_stars(product_main):
         'Four': 4,
         'Five': 5
     }
-    rating_html = product_main.find('p', 'star-rating')
-    rating_txt = rating_html['class'][1]
-    return ratings.get(rating_txt)
+    try:
+        product_main = soup.find(class_='product_main')
+        rating_html = product_main.find('p', 'star-rating')
+        rating_txt = rating_html['class'][1]
+        return ratings.get(rating_txt, '')
+    except IndexError:
+        print(f'\n image_url not found')
 
 
 def download_book_img(numbered_category_name, book_title, image_url):
@@ -259,7 +284,7 @@ def main():
         rows = []
         # create a csv file in the folder 'csv files' name category.csv
         # get category name from url
-        category_name = get_cat_name(category_url)
+        category_name = get_cat_name_from_url(category_url)
         pages = list_category_pages(category_url)  # list of urls of pages
         num_books_in_cat = get_cat_size(
             category_url)  # num of books in category
